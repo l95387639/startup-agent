@@ -1,47 +1,66 @@
-# 🤖 Startup Agent — Agent RAG autonome avec LangGraph
+# 🤖 Startup Analyzer — Agent RAG autonome
 
-Agent IA capable d'analyser une startup de façon entièrement autonome : il cherche lui-même les sources, les scrape, les indexe et génère une fiche d'analyse sourcée — sans qu'on lui fournisse une seule URL.
+Agent IA capable d'analyser n'importe quelle startup de façon autonome : il cherche ses propres sources, les scrape, les indexe et génère une fiche d'analyse sourcée — sans qu'on lui fournisse une seule URL.
+
+Inspiré de l'architecture de [Histia](https://histia.net) — startup IA spécialisée en intelligence de marché.
 
 ---
 
-## 🧠 Architecture
+## 🎥 Demo
+
+Entrez un nom de startup → l'agent fait tout le reste.
+
+![demo](demo.gif)
+
+---
+
+## 🧠 Architecture multi-agents
 
 ```
-Nom startup
-     ↓
-Search API (Serper) — trouve les URLs automatiquement
-     ↓
-Scraping + Chunking + Embeddings → ChromaDB
-     ↓
-LLM évalue : assez d'infos ?
-     ↓ Non → nouvelle recherche
-     ↓ Oui
-Fiche d'analyse sourcée
+Orchestrateur LangGraph
+        ↓
+┌─────────────────────────────────┐
+│  🔍 Agent Chercheur             │ → trouve les URLs via Serper
+│  🕷️  Agent Scraper              │ → scrape avec aiohttp + Playwright
+│  📊 Agent Analyste              │ → évalue la qualité (score 0-10)
+│  ✍️  Agent Rédacteur            │ → génère la fiche sourcée
+└─────────────────────────────────┘
+        ↓
+   Boucle si score insuffisant
 ```
 
 ## ⚙️ Stack technique
 
 | Composant | Technologie |
 |---|---|
-| Orchestration agent | `LangGraph` |
+| Orchestration | `LangGraph` |
 | Search API | `Serper.dev` |
-| Scraping | `requests` + `BeautifulSoup` |
+| Scraping rapide | `aiohttp` + `BeautifulSoup` |
+| Scraping protégé | `Playwright` (fallback automatique) |
 | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` |
 | Base vectorielle | `ChromaDB` |
 | LLM | `Llama 3.1 8B` via Groq API |
+| Évaluation | `RAGAS` (faithfulness, relevancy, precision) |
+| API | `FastAPI` |
+| Interface | `Streamlit` |
 
 ---
 
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/ton-username/startup-agent
+git clone https://github.com/l95387639/startup-agent
 cd startup-agent
 
 conda create -n startup-agent python=3.11
 conda activate startup-agent
 
-pip install langgraph langchain langchain-groq langchain-core requests beautifulsoup4 chromadb sentence-transformers groq python-dotenv google-search-results
+pip install langgraph langchain langchain-groq langchain-core requests \
+    beautifulsoup4 chromadb sentence-transformers groq python-dotenv \
+    google-search-results aiohttp playwright fastapi uvicorn streamlit \
+    ragas datasets
+
+playwright install chromium
 ```
 
 Crée un fichier `.env` :
@@ -55,46 +74,41 @@ SERPER_API_KEY=ta_clé_serper
 
 ## 💻 Utilisation
 
+**Terminal 1 — Lance l'API :**
 ```bash
-python agent_v2.py
+python api.py
 ```
 
-Pour analyser une autre startup, modifie le bas de `agent_v2.py` :
-
-```python
-rapport = analyser_startup(
-    nom="Mistral AI",
-    questions=[
-        "Qui sont les fondateurs ?",
-        "Quel est leur modèle économique ?",
-        "Quels sont leurs produits ?",
-    ]
-)
+**Terminal 2 — Lance l'interface :**
+```bash
+streamlit run app.py
 ```
+
+Ouvre **http://localhost:8501** dans ton navigateur, entre un nom de startup et clique sur Analyser.
 
 ---
 
 ## 🔬 Concepts implémentés
 
-**Agent autonome avec LangGraph**
-Graphe d'états avec boucle de décision — l'agent évalue lui-même si il a assez d'informations et relance une recherche si nécessaire, sans intervention humaine.
+**Architecture multi-agents avec LangGraph**
+4 agents spécialisés qui communiquent via un état partagé. L'agent analyste évalue la qualité des données (score 0-10) et décide si une nouvelle itération de recherche est nécessaire.
 
-**Search API automatique**
-L'agent utilise Serper.dev pour découvrir les sources pertinentes à partir du nom de la startup — aucune URL à fournir manuellement.
+**Scraping intelligent**
+aiohttp pour les sites standards (rapide), Playwright en fallback automatique pour les sites qui bloquent les requêtes simples.
 
-**Évaluation de la qualité par LLM**
-Avant de générer le rapport, le LLM score la qualité des données disponibles (0-10) et décide s'il faut chercher plus d'informations.
+**Évaluation RAGAS**
+Mesure objective de la qualité du pipeline : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
 
 **RAG multilingue sourcé**
-Embeddings multilingues + ChromaDB pour un retrieval précis en français et en anglais. Chaque affirmation est liée à sa source.
+Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'origine.
 
 ---
 
-## 📈 Limitations et pistes d'amélioration
+## 📈 Pistes d'amélioration
 
-- Certains sites bloquent le scraping (LinkedIn, Pappers) — Playwright permettrait de contourner ces protections
-- Scraping séquentiel — `asyncio` permettrait de paralléliser et d'aller 5x plus vite
-- Le scoring de qualité pourrait intégrer des métriques RAGAS pour être plus robuste
+- **Self-RAG** — l'agent critique ses propres réponses avant de les retourner
+- **Modèles locaux** via Ollama pour fonctionner sans clé API
+- **Déploiement** sur Railway ou Render
 
 ---
 
