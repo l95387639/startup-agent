@@ -6,10 +6,26 @@ from ragas.metrics import faithfulness, answer_relevancy, context_precision
 from ragas.llms import LangchainLLMWrapper
 from langchain_groq import ChatGroq
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from agent_v2 import retrieval
+from sentence_transformers import SentenceTransformer
 import chromadb
 
 load_dotenv()
+
+def retrieval(question: str, collection, top_k: int = 5) -> list[dict]:
+    model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    embedding = model.encode(question).tolist()
+    resultats = collection.query(
+        query_embeddings=[embedding],
+        n_results=top_k
+    )
+    chunks = []
+    for i in range(len(resultats["documents"][0])):
+        chunks.append({
+            "contenu": resultats["documents"][0][i],
+            "url": resultats["metadatas"][0][i]["url"],
+            "distance": resultats["distances"][0][i]
+        })
+    return chunks
 
 # Questions de test + réponses de référence
 QUESTIONS = [
@@ -43,11 +59,9 @@ def preparer_dataset():
     for question, reference in zip(QUESTIONS, REPONSES_REFERENCE):
         print(f"Évaluation : {question[:50]}...")
 
-        # Retrieval
         chunks = retrieval(question, collection, top_k=5)
         contexte = [c["contenu"] for c in chunks]
 
-        # Génération de la réponse
         prompt = f"""Réponds à cette question en te basant uniquement sur le contexte.
         
 Contexte : {" ".join(contexte[:3])}
@@ -73,14 +87,22 @@ def evaluer():
     dataset = preparer_dataset()
 
     print("\nLancement de l'évaluation RAGAS...")
+
     llm = LangchainLLMWrapper(ChatGroq(
         api_key=os.getenv("GROQ_API_KEY"),
         model="llama-3.1-8b-instant",
-        temperature=0
+        temperature=0,
+        request_timeout=120
     ))
     embeddings = HuggingFaceEmbeddings(
         model_name="paraphrase-multilingual-MiniLM-L12-v2"
     )
+
+    # Configure les métriques avec notre LLM
+    faithfulness.llm = llm
+    answer_relevancy.llm = llm
+    answer_relevancy.embeddings = embeddings
+    context_precision.llm = llm
 
     resultats = evaluate(
         dataset=dataset,
@@ -92,10 +114,9 @@ def evaluer():
     print("\n=== RÉSULTATS RAGAS ===")
     print(resultats)
 
-    # Sauvegarde
     df = resultats.to_pandas()
-    df.to_csv("ragas_results.csv", index=False)
-    print("\nRésultats sauvegardés dans ragas_results.csv")
+    df.to_csv("ragas_results_veesion.csv", index=False)
+    print("\nRésultats sauvegardés dans ragas_results_veesion.csv")
 
 if __name__ == "__main__":
     evaluer()

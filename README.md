@@ -97,7 +97,7 @@ Ouvre **http://localhost:8501** dans ton navigateur, entre un nom de startup et 
 aiohttp pour les sites standards (rapide), Playwright en fallback automatique pour les sites qui bloquent les requêtes simples.
 
 **Évaluation RAGAS**
-Mesure objective de la qualité du pipeline : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
+Mesure objective de la qualité du pipeline sur Histia : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
 
 **RAG multilingue sourcé**
 Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'origine.
