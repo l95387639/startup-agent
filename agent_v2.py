@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage
 from sentence_transformers import SentenceTransformer
 from serpapi import GoogleSearch
 
-from scraper_async import scrape_startup
+from scraper_playwright import scrape_startup
 from indexer import indexer_startup
 
 load_dotenv()
