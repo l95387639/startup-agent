@@ -2,13 +2,11 @@ import os
 import json
 import chromadb
 from dotenv import load_dotenv
-from typing import TypedDict, Annotated
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from sentence_transformers import SentenceTransformer
-from serpapi import GoogleSearch
-
 from scraper_playwright import scrape_startup
 from indexer import indexer_startup
 
@@ -17,7 +15,7 @@ load_dotenv()
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 LLM_MODEL = "llama-3.1-8b-instant"
 
-# --- État de l'agent ---
+# --- État partagé entre tous les agents ---
 class AgentState(TypedDict):
     nom_startup: str
     urls_trouvees: list[str]
@@ -25,17 +23,30 @@ class AgentState(TypedDict):
     chunks_suffisants: bool
     rapport: str
     questions: list[str]
+    fiabilite_sources: dict
 
-# --- Outil : chercher des URLs via Serper ---
-def chercher_urls(nom_startup: str, iteration: int = 0) -> list[str]:
+# --- LLM partagé ---
+def get_llm(temperature: float = 0):
+    return ChatGroq(
+        api_key=os.getenv("GROQ_API_KEY"),
+        model=LLM_MODEL,
+        temperature=temperature
+    )
+
+# ============================================================
+# AGENT 1 : CHERCHEUR
+# Rôle : trouver les meilleures URLs pour une startup
+# ============================================================
+def agent_chercheur(state: AgentState) -> AgentState:
     import requests
+    
     queries = [
-        f"{nom_startup} startup",
-        f"{nom_startup} fondateurs cofondateurs équipe",
-        f"{nom_startup} intelligence artificielle produit"
+        f"{state['nom_startup']} startup",
+        f"{state['nom_startup']} fondateurs cofondateurs équipe",
+        f"{state['nom_startup']} intelligence artificielle produit technologie"
     ]
-    query = queries[min(iteration, len(queries) - 1)]
-    print(f"  Recherche Serper : '{query}'")
+    query = queries[min(state["iterations"], len(queries) - 1)]
+    print(f"\n[Chercheur] Recherche : '{query}'")
 
     response = requests.post(
         "https://google.serper.dev/search",
@@ -45,148 +56,157 @@ def chercher_urls(nom_startup: str, iteration: int = 0) -> list[str]:
         },
         json={"q": query, "num": 8, "hl": "fr"}
     )
-    results = response.json()
-    urls = [r["link"] for r in results.get("organic", [])]
-    print(f"  {len(urls)} URLs trouvées")
-    return urls
-
-# --- Outil : retrieval dans ChromaDB ---
-def retrieval(question: str, collection, top_k: int = 5) -> list[dict]:
-    model = SentenceTransformer(MODEL_NAME)
-    embedding = model.encode(question).tolist()
-    resultats = collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k
-    )
-    chunks = []
-    for i in range(len(resultats["documents"][0])):
-        chunks.append({
-            "contenu": resultats["documents"][0][i],
-            "url": resultats["metadatas"][0][i]["url"],
-            "distance": resultats["distances"][0][i]
-        })
-    return chunks
-
-# --- Noeud 1 : rechercher les URLs ---
-def node_chercher_urls(state: AgentState) -> AgentState:
-    print(f"\n[Agent] Recherche URLs (itération {state['iterations'] + 1})...")
-    urls = chercher_urls(state["nom_startup"], state["iterations"])
-    # Ajoute les nouvelles URLs sans doublons
-    toutes_urls = list(set(state["urls_trouvees"] + urls))
+    
+    urls = [r["link"] for r in response.json().get("organic", [])]
+    
+    # Filtre LinkedIn et autres sites inutiles
+    urls_filtrees = [u for u in urls if "linkedin.com" not in u]
+    
+    toutes_urls = list(set(state["urls_trouvees"] + urls_filtrees))
+    print(f"[Chercheur] {len(urls_filtrees)} nouvelles URLs trouvées, {len(toutes_urls)} au total")
+    
     return {**state, "urls_trouvees": toutes_urls}
 
-# --- Noeud 2 : scraper et indexer ---
-def node_scraper_indexer(state: AgentState) -> AgentState:
-    print(f"\n[Agent] Scraping et indexation de {len(state['urls_trouvees'])} URLs...")
+# ============================================================
+# AGENT 2 : SCRAPER
+# Rôle : scraper et indexer les sources trouvées
+# ============================================================
+def agent_scraper(state: AgentState) -> AgentState:
+    print(f"\n[Scraper] Scraping de {len(state['urls_trouvees'])} URLs...")
     data = scrape_startup(state["nom_startup"], state["urls_trouvees"])
-    indexer_startup(data)
+    result = indexer_startup(data)
+    
+    if result is None:
+        print("[Scraper] ⚠️ Aucun contenu indexé")
+    
     return state
 
-# --- Noeud 3 : évaluer si on a assez d'infos ---
-def node_evaluer(state: AgentState) -> AgentState:
-    print("\n[Agent] Évaluation de la qualité des données...")
+# ============================================================
+# AGENT 3 : ANALYSTE
+# Rôle : évaluer la qualité et la fiabilité des données
+# ============================================================
+def agent_analyste(state: AgentState) -> AgentState:
+    print(f"\n[Analyste] Évaluation de la qualité des données...")
     
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_collection("startups")
     total = collection.count()
-    print(f"  {total} chunks dans la base")
+    print(f"[Analyste] {total} chunks dans la base")
 
-    # Teste si on peut répondre aux questions clés
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model=LLM_MODEL,
-        temperature=0
-    )
+    llm = get_llm(temperature=0)
+    model = SentenceTransformer(MODEL_NAME)
 
     questions_test = [
         f"Qui sont les fondateurs de {state['nom_startup']} ?",
-        f"Quel problème {state['nom_startup']} résout-il ?"
+        f"Quel problème {state['nom_startup']} résout-il ?",
+        f"Quelle technologie utilise {state['nom_startup']} ?"
     ]
 
     scores = []
+    fiabilite = {}
+
     for question in questions_test:
-        chunks = retrieval(question, collection, top_k=3)
-        contexte = "\n".join([c["contenu"] for c in chunks])
-        
-        prompt = f"""Tu analyses la qualité d'un contexte pour répondre à une question.
-Réponds UNIQUEMENT par un JSON : {{"score": 0-10, "raison": "..."}}
+        embedding = model.encode(question).tolist()
+        resultats = collection.query(query_embeddings=[embedding], n_results=3)
+        contexte = "\n".join(resultats["documents"][0])
 
-Question : {question}
-Contexte disponible : {contexte[:1000]}"""
+        messages = [
+            SystemMessage(content="""Tu es un analyste expert en évaluation de données.
+Tu évalues si un contexte permet de répondre à une question.
+Réponds UNIQUEMENT en JSON : {"score": 0-10, "raison": "..."}"""),
+            HumanMessage(content=f"Question : {question}\nContexte : {contexte[:800]}")
+        ]
 
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = llm.invoke(messages)
         try:
             clean = response.content.replace("```json", "").replace("```", "").strip()
             result = json.loads(clean)
             score = result.get("score", 0)
-            print(f"  Score '{question[:40]}...' : {score}/10")
+            raison = result.get("raison", "")
+            print(f"[Analyste] Score '{question[:40]}' : {score}/10 — {raison[:60]}")
             scores.append(score)
+            fiabilite[question] = {"score": score, "raison": raison}
         except:
             scores.append(3)
 
     score_moyen = sum(scores) / len(scores)
-    suffisant = score_moyen >= 7 or state["iterations"] >= 3
-    print(f"  Score moyen : {score_moyen:.1f}/10 — {'suffisant ✓' if suffisant else 'insuffisant, nouvelle recherche...'}")
+    suffisant = score_moyen >= 6 or state["iterations"] >= 2
+    
+    print(f"[Analyste] Score moyen : {score_moyen:.1f}/10 — {'✓ suffisant' if suffisant else '✗ insuffisant, nouvelle recherche'}")
 
-    return {**state, "chunks_suffisants": suffisant, "iterations": state["iterations"] + 1}
+    return {
+        **state,
+        "chunks_suffisants": suffisant,
+        "iterations": state["iterations"] + 1,
+        "fiabilite_sources": fiabilite
+    }
 
-# --- Noeud 4 : générer le rapport ---
-def node_generer_rapport(state: AgentState) -> AgentState:
-    print("\n[Agent] Génération du rapport final...")
+# ============================================================
+# AGENT 4 : RÉDACTEUR
+# Rôle : générer le rapport final sourcé
+# ============================================================
+def agent_redacteur(state: AgentState) -> AgentState:
+    print(f"\n[Rédacteur] Génération du rapport final...")
 
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_collection("startups")
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model=LLM_MODEL,
-        temperature=0.2
-    )
+    model = SentenceTransformer(MODEL_NAME)
+    llm = get_llm(temperature=0.2)
 
     rapport = f"\n{'='*62}\n FICHE STARTUP : {state['nom_startup'].upper()}\n{'='*62}\n"
     rapport += f"Sources analysées : {len(state['urls_trouvees'])} URLs\n"
     rapport += f"Itérations de recherche : {state['iterations']}\n"
 
     for question in state["questions"]:
-        chunks = retrieval(question, collection, top_k=8)
-        contexte = "\n".join([f"[{c['url']}]\n{c['contenu']}" for c in chunks])
+        # Récupère le score de fiabilité si disponible
+        score_info = state["fiabilite_sources"].get(question, {})
+        score = score_info.get("score", "N/A")
 
-        prompt = f"""Tu es un analyste startup. Réponds directement et factuellement.
-Cite les sources avec [URL].
-Si l'info est absente, dis-le en une phrase.
+        # Retrieval
+        embedding = model.encode(question).tolist()
+        resultats = collection.query(query_embeddings=[embedding], n_results=8)
+        chunks = resultats["documents"][0]
+        urls = [m["url"] for m in resultats["metadatas"][0]]
+        contexte = "\n".join([f"[{urls[i]}]\n{chunks[i]}" for i in range(len(chunks))])
 
-CONTEXTE:
-{contexte}
+        messages = [
+            SystemMessage(content="""Tu es un analyste startup expert.
+Réponds directement et factuellement en citant les sources [URL].
+Si une information est absente, dis-le en une phrase."""),
+            HumanMessage(content=f"Contexte :\n{contexte}\n\nQuestion : {question}")
+        ]
 
-QUESTION: {question}"""
-
-        response = llm.invoke([HumanMessage(content=prompt)])
-        rapport += f"\n{'─'*62}\n📌 {question}\n{'─'*62}\n{response.content}\n"
+        response = llm.invoke(messages)
+        rapport += f"\n{'─'*62}\n📌 {question}"
+        if score != "N/A":
+            rapport += f" [fiabilité: {score}/10]"
+        rapport += f"\n{'─'*62}\n{response.content}\n"
 
     return {**state, "rapport": rapport}
 
 # --- Décision : continuer ou générer ---
 def decision(state: AgentState) -> str:
-    if state["chunks_suffisants"]:
-        return "generer"
-    return "chercher"
+    return "generer" if state["chunks_suffisants"] else "chercher"
 
-# --- Construction du graphe LangGraph ---
+# ============================================================
+# CONSTRUCTION DU GRAPHE MULTI-AGENTS
+# ============================================================
 def construire_agent():
     graph = StateGraph(AgentState)
 
-    graph.add_node("chercher_urls", node_chercher_urls)
-    graph.add_node("scraper_indexer", node_scraper_indexer)
-    graph.add_node("evaluer", node_evaluer)
-    graph.add_node("generer_rapport", node_generer_rapport)
+    graph.add_node("chercheur", agent_chercheur)
+    graph.add_node("scraper", agent_scraper)
+    graph.add_node("analyste", agent_analyste)
+    graph.add_node("redacteur", agent_redacteur)
 
-    graph.set_entry_point("chercher_urls")
-    graph.add_edge("chercher_urls", "scraper_indexer")
-    graph.add_edge("scraper_indexer", "evaluer")
-    graph.add_conditional_edges("evaluer", decision, {
-        "chercher": "chercher_urls",
-        "generer": "generer_rapport"
+    graph.set_entry_point("chercheur")
+    graph.add_edge("chercheur", "scraper")
+    graph.add_edge("scraper", "analyste")
+    graph.add_conditional_edges("analyste", decision, {
+        "chercher": "chercheur",
+        "generer": "redacteur"
     })
-    graph.add_edge("generer_rapport", END)
+    graph.add_edge("redacteur", END)
 
     return graph.compile()
 
@@ -199,7 +219,8 @@ def analyser_startup(nom: str, questions: list[str]) -> str:
         "iterations": 0,
         "chunks_suffisants": False,
         "rapport": "",
-        "questions": questions
+        "questions": questions,
+        "fiabilite_sources": {}
     }
     result = agent.invoke(state)
     return result["rapport"]
