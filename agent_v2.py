@@ -31,7 +31,7 @@ def chercher_urls(nom_startup: str, iteration: int = 0) -> list[str]:
     import requests
     queries = [
         f"{nom_startup} startup",
-        f"{nom_startup} fondateurs technologie",
+        f"{nom_startup} fondateurs cofondateurs équipe",
         f"{nom_startup} intelligence artificielle produit"
     ]
     query = queries[min(iteration, len(queries) - 1)]
@@ -43,7 +43,7 @@ def chercher_urls(nom_startup: str, iteration: int = 0) -> list[str]:
             "X-API-KEY": os.getenv("SERPER_API_KEY"),
             "Content-Type": "application/json"
         },
-        json={"q": query, "num": 5, "hl": "fr"}
+        json={"q": query, "num": 8, "hl": "fr"}
     )
     results = response.json()
     urls = [r["link"] for r in results.get("organic", [])]
@@ -125,7 +125,7 @@ Contexte disponible : {contexte[:1000]}"""
             scores.append(3)
 
     score_moyen = sum(scores) / len(scores)
-    suffisant = score_moyen >= 5 or state["iterations"] >= 2
+    suffisant = score_moyen >= 7 or state["iterations"] >= 3
     print(f"  Score moyen : {score_moyen:.1f}/10 — {'suffisant ✓' if suffisant else 'insuffisant, nouvelle recherche...'}")
 
     return {**state, "chunks_suffisants": suffisant, "iterations": state["iterations"] + 1}
