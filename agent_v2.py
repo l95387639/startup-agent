@@ -199,8 +199,9 @@ Tu dois :
 3. Supprimer ou corriger les affirmations non vérifiables
 4. Retourner le rapport corrigé UNIQUEMENT avec les faits vérifiés
 
-Ne garde que ce qui est explicitement mentionné dans les sources.
-Si une section entière est invérifiable, remplace-la par "Information non trouvée dans les sources disponibles."
+Ne garde QUE ce qui est MOT POUR MOT ou clairement paraphrasé depuis les sources.
+Tout nom propre, chiffre ou fait qui n'apparaît pas dans les sources doit être SUPPRIMÉ sans exception.
+Si une section entière est invérifiable, écris simplement "Information non trouvée dans les sources disponibles."
 """),
         HumanMessage(content=f"""CONTEXTE SOURCE :
 {contexte_global[:3000]}
