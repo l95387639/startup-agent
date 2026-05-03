@@ -83,10 +83,16 @@ Ouvre **http://localhost:8501** dans ton navigateur, entre un nom de startup et 
 ## 🔬 Concepts implémentés
 
 **Architecture multi-agents avec LangGraph**
-4 agents spécialisés qui communiquent via un état partagé. L'agent analyste évalue la qualité des données (score 0-10) et décide si une nouvelle itération de recherche est nécessaire.
+5 agents spécialisés qui communiquent via un état partagé. L'agent analyste évalue la qualité des données (score 0-10) et décide si une nouvelle itération de recherche est nécessaire.
 
 **Scraping intelligent**
 aiohttp pour les sites standards (rapide), Playwright en fallback automatique pour les sites qui bloquent les requêtes simples.
+
+**Filtre de pertinence des sources**
+Avant de scraper, le LLM évalue si chaque URL trouvée par Serper parle vraiment de la startup analysée. Les URLs hors sujet sont automatiquement ignorées.
+
+**Self-RAG — Agent Vérificateur**
+Après génération du rapport, un agent vérifie chaque affirmation factuelle contre les sources scrapées. Les hallucinations et informations non vérifiables sont supprimées automatiquement.
 
 **Évaluation RAGAS sur Histia**
 Mesure objective de la qualité du pipeline : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
@@ -98,9 +104,9 @@ Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'
 
 ## 📈 Pistes d'amélioration
 
-- **Self-RAG** — l'agent critique ses propres réponses avant de les retourner
 - **Modèles locaux** via Ollama pour fonctionner sans clé API
 - **Métriques RAGAS** sur d'autres startups
+- **Cache persistant** pour éviter de rescraper les mêmes sources
 
 ---
 
