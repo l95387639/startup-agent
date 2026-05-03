@@ -34,6 +34,28 @@ def get_llm(temperature: float = 0):
     )
 
 # ============================================================
+# FILTRE DE PERTINENCE
+# ============================================================
+def filtrer_urls_pertinentes(urls: list[str], nom_startup: str) -> list[str]:
+    """Filtre les URLs non pertinentes via LLM."""
+    llm = get_llm(temperature=0)
+    urls_pertinentes = []
+    
+    for url in urls:
+        messages = [
+            SystemMessage(content="Tu es un filtre de pertinence. Réponds UNIQUEMENT par 'oui' ou 'non'."),
+            HumanMessage(content=f"Cette URL parle-t-elle probablement de la startup '{nom_startup}' ?\nURL: {url}")
+        ]
+        response = llm.invoke(messages)
+        if "oui" in response.content.lower():
+            urls_pertinentes.append(url)
+            print(f"  ✓ Pertinente : {url[:60]}")
+        else:
+            print(f"  ✗ Ignorée : {url[:60]}")
+    
+    return urls_pertinentes
+
+# ============================================================
 # AGENT 1 : CHERCHEUR
 # ============================================================
 def agent_chercheur(state: AgentState) -> AgentState:
@@ -57,9 +79,13 @@ def agent_chercheur(state: AgentState) -> AgentState:
     )
     
     urls = [r["link"] for r in response.json().get("organic", [])]
-    urls_filtrees = [u for u in urls if "linkedin.com" not in u]
-    toutes_urls = list(set(state["urls_trouvees"] + urls_filtrees))
-    print(f"[Chercheur] {len(urls_filtrees)} nouvelles URLs trouvées, {len(toutes_urls)} au total")
+    urls = [u for u in urls if "linkedin.com" not in u]
+    
+    # Filtre de pertinence via LLM
+    urls_pertinentes = filtrer_urls_pertinentes(urls, state["nom_startup"])
+    
+    toutes_urls = list(set(state["urls_trouvees"] + urls_pertinentes))
+    print(f"[Chercheur] {len(urls_pertinentes)} URLs pertinentes, {len(toutes_urls)} au total")
     
     return {**state, "urls_trouvees": toutes_urls}
 
@@ -144,7 +170,7 @@ def agent_redacteur(state: AgentState) -> AgentState:
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_collection("startups")
     model = SentenceTransformer(MODEL_NAME)
-    llm = get_llm(temperature=0.2)
+    llm = get_llm(temperature=0)
 
     rapport = f"\n{'='*62}\n FICHE STARTUP : {state['nom_startup'].upper()}\n{'='*62}\n"
     rapport += f"Sources analysées : {len(state['urls_trouvees'])} URLs\n"
@@ -200,6 +226,7 @@ Tu dois :
 4. Ne JAMAIS ajouter de nouvelles sections ou questions
 5. Tout nom propre absent des sources doit être supprimé
 
+Ne garde QUE ce qui est MOT POUR MOT ou clairement paraphrasé depuis les sources.
 Retourne le rapport avec exactement les mêmes sections qu'à l'entrée."""),
         HumanMessage(content=f"""CONTEXTE SOURCE :
 {contexte_global[:3000]}
