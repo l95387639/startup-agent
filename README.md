@@ -103,10 +103,9 @@ Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'
 ---
 
 ## 📈 Pistes d'amélioration
-
-- **Modèles locaux** via Ollama pour fonctionner sans clé API
-- **Métriques RAGAS** sur d'autres startups
-- **Cache persistant** pour éviter de rescraper les mêmes sources
+- **LLM payant**
+- **Re-ranking** 
+- **LangSmith** 
 
 ---
 
