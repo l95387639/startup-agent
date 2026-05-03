@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from sentence_transformers import SentenceTransformer
-from scraper_playwright import scrape_startup
+from scraper import scrape_startup
 from indexer import indexer_startup
 
 load_dotenv()
@@ -35,7 +35,6 @@ def get_llm(temperature: float = 0):
 
 # ============================================================
 # AGENT 1 : CHERCHEUR
-# Rôle : trouver les meilleures URLs pour une startup
 # ============================================================
 def agent_chercheur(state: AgentState) -> AgentState:
     import requests
@@ -58,10 +57,7 @@ def agent_chercheur(state: AgentState) -> AgentState:
     )
     
     urls = [r["link"] for r in response.json().get("organic", [])]
-    
-    # Filtre LinkedIn et autres sites inutiles
     urls_filtrees = [u for u in urls if "linkedin.com" not in u]
-    
     toutes_urls = list(set(state["urls_trouvees"] + urls_filtrees))
     print(f"[Chercheur] {len(urls_filtrees)} nouvelles URLs trouvées, {len(toutes_urls)} au total")
     
@@ -69,7 +65,6 @@ def agent_chercheur(state: AgentState) -> AgentState:
 
 # ============================================================
 # AGENT 2 : SCRAPER
-# Rôle : scraper et indexer les sources trouvées
 # ============================================================
 def agent_scraper(state: AgentState) -> AgentState:
     print(f"\n[Scraper] Scraping de {len(state['urls_trouvees'])} URLs...")
@@ -83,7 +78,6 @@ def agent_scraper(state: AgentState) -> AgentState:
 
 # ============================================================
 # AGENT 3 : ANALYSTE
-# Rôle : évaluer la qualité et la fiabilité des données
 # ============================================================
 def agent_analyste(state: AgentState) -> AgentState:
     print(f"\n[Analyste] Évaluation de la qualité des données...")
@@ -111,9 +105,9 @@ def agent_analyste(state: AgentState) -> AgentState:
         contexte = "\n".join(resultats["documents"][0])
 
         messages = [
-            SystemMessage(content="""Tu es un analyste expert en évaluation de données.
-Tu évalues si un contexte permet de répondre à une question.
-Réponds UNIQUEMENT en JSON : {"score": 0-10, "raison": "..."}"""),
+            SystemMessage(content=f"""Tu es un analyste expert en évaluation de données.
+Tu évalues si un contexte permet de répondre à une question sur {state['nom_startup']}.
+Réponds UNIQUEMENT en JSON : {{"score": 0-10, "raison": "..."}}"""),
             HumanMessage(content=f"Question : {question}\nContexte : {contexte[:800]}")
         ]
 
@@ -143,7 +137,6 @@ Réponds UNIQUEMENT en JSON : {"score": 0-10, "raison": "..."}"""),
 
 # ============================================================
 # AGENT 4 : RÉDACTEUR
-# Rôle : générer le rapport final sourcé
 # ============================================================
 def agent_redacteur(state: AgentState) -> AgentState:
     print(f"\n[Rédacteur] Génération du rapport final...")
@@ -158,11 +151,9 @@ def agent_redacteur(state: AgentState) -> AgentState:
     rapport += f"Itérations de recherche : {state['iterations']}\n"
 
     for question in state["questions"]:
-        # Récupère le score de fiabilité si disponible
         score_info = state["fiabilite_sources"].get(question, {})
         score = score_info.get("score", "N/A")
 
-        # Retrieval
         embedding = model.encode(question).tolist()
         resultats = collection.query(query_embeddings=[embedding], n_results=8)
         chunks = resultats["documents"][0]
@@ -170,7 +161,9 @@ def agent_redacteur(state: AgentState) -> AgentState:
         contexte = "\n".join([f"[{urls[i]}]\n{chunks[i]}" for i in range(len(chunks))])
 
         messages = [
-            SystemMessage(content="""Tu es un analyste startup expert.
+            SystemMessage(content=f"""Tu es un analyste startup expert.
+Tu analyses UNIQUEMENT la startup {state['nom_startup']}.
+Ignore toute information sur d'autres entreprises.
 Réponds directement et factuellement en citant les sources [URL].
 Si une information est absente, dis-le en une phrase."""),
             HumanMessage(content=f"Contexte :\n{contexte}\n\nQuestion : {question}")
@@ -184,12 +177,12 @@ Si une information est absente, dis-le en une phrase."""),
 
     return {**state, "rapport": rapport}
 
-# --- Décision : continuer ou générer ---
+# --- Décision ---
 def decision(state: AgentState) -> str:
     return "generer" if state["chunks_suffisants"] else "chercher"
 
 # ============================================================
-# CONSTRUCTION DU GRAPHE MULTI-AGENTS
+# CONSTRUCTION DU GRAPHE
 # ============================================================
 def construire_agent():
     graph = StateGraph(AgentState)
@@ -210,7 +203,6 @@ def construire_agent():
 
     return graph.compile()
 
-# --- Point d'entrée ---
 def analyser_startup(nom: str, questions: list[str]) -> str:
     agent = construire_agent()
     state = {

@@ -8,10 +8,18 @@ def chunk_text(texte: str, taille_max: int = 500, overlap: int = 50) -> list[str
     """Découpe par paragraphes, regroupe les petits, coupe les grands."""
     paragraphes = [p.strip() for p in texte.split("\n") if p.strip()]
     
+    # Supprime les paragraphes dupliqués
+    paragraphes_vus = set()
+    paragraphes_uniques = []
+    for p in paragraphes:
+        if p not in paragraphes_vus:
+            paragraphes_uniques.append(p)
+            paragraphes_vus.add(p)
+    
     chunks = []
     chunk_courant = ""
     
-    for para in paragraphes:
+    for para in paragraphes_uniques:
         if len(chunk_courant) + len(para) < taille_max:
             chunk_courant += " " + para
         else:
@@ -66,7 +74,6 @@ def indexer_startup(data: dict, collection_name: str = "startups"):
             ids.append(f"chunk_{idx}")
             idx += 1
     
-    # Vérification critique avant d'indexer
     if not tous_les_chunks:
         print("⚠️ Aucun chunk à indexer — toutes les URLs ont échoué ou sont vides")
         return None
