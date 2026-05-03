@@ -104,9 +104,9 @@ Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'
 
 ## 📈 Pistes d'amélioration
 - **LLM payant**
-- **Re-ranking** 
-- **LangSmith** 
-
+- **Re-ranking** - passer de "ok" à "excellent" ✅
+- **LangSmith** - monitoring des appels LLM
+- **FAISS** - plus rapide que ChromaDB à grande échelle
 ---
 
 ## 👤 Auteur
