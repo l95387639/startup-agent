@@ -194,15 +194,13 @@ def agent_verificateur(state: AgentState) -> AgentState:
         SystemMessage(content=f"""Tu es un vérificateur factuel strict.
 Tu reçois un rapport sur {state['nom_startup']} et le contexte source.
 Tu dois :
-1. Identifier chaque affirmation factuelle dans le rapport
-2. Vérifier si elle est présente dans le contexte source
-3. Supprimer ou corriger les affirmations non vérifiables
-4. Retourner le rapport corrigé UNIQUEMENT avec les faits vérifiés
+1. Garder EXACTEMENT les mêmes sections et questions du rapport original
+2. Pour chaque section, supprimer les affirmations non vérifiables
+3. Si une section est entièrement invérifiable, écrire "Information non trouvée dans les sources disponibles."
+4. Ne JAMAIS ajouter de nouvelles sections ou questions
+5. Tout nom propre absent des sources doit être supprimé
 
-Ne garde QUE ce qui est MOT POUR MOT ou clairement paraphrasé depuis les sources.
-Tout nom propre, chiffre ou fait qui n'apparaît pas dans les sources doit être SUPPRIMÉ sans exception.
-Si une section entière est invérifiable, écris simplement "Information non trouvée dans les sources disponibles."
-"""),
+Retourne le rapport avec exactement les mêmes sections qu'à l'entrée."""),
         HumanMessage(content=f"""CONTEXTE SOURCE :
 {contexte_global[:3000]}
 
