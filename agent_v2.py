@@ -13,7 +13,7 @@ from indexer import indexer_startup
 load_dotenv()
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-LLM_MODEL = "llama-3.1-8b-instant"
+LLM_MODEL = "llama-3.3-70b-versatile"
 
 # --- État partagé entre tous les agents ---
 class AgentState(TypedDict):
