@@ -1,16 +1,12 @@
 # 🤖 Startup Analyzer — Agent RAG autonome
 
-Agent IA capable d'analyser n'importe quelle startup de façon autonome : il cherche ses propres sources, les scrape, les indexe et génère une fiche d'analyse sourcée — sans qu'on lui fournisse une seule URL.
-
-Inspiré de l'architecture de [Histia](https://histia.net) — startup IA spécialisée en intelligence de marché.
+🚀 **[Tester la démo en ligne](https://simonaaaa-startup-analyzer.hf.space)**
 
 ---
 
-## 🎥 Demo
+Agent IA capable d'analyser n'importe quelle startup de façon autonome : il cherche ses propres sources, les scrape, les indexe et génère une fiche d'analyse sourcée — sans qu'on lui fournisse une seule URL.
 
-Entrez un nom de startup → l'agent fait tout le reste.
-
-![demo](demo.gif)
+Inspiré de l'architecture de [Histia](https://histia.net) — startup IA spécialisée en intelligence de marché.
 
 ---
 
@@ -40,7 +36,7 @@ Orchestrateur LangGraph
 | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` |
 | Base vectorielle | `ChromaDB` |
 | LLM | `Llama 3.1 8B` via Groq API |
-| Évaluation | `RAGAS` (faithfulness, relevancy, precision) |
+| Évaluation | `RAGAS` (faithfulness 0.75, relevancy 0.93, precision 0.65) |
 | API | `FastAPI` |
 | Interface | `Streamlit` |
 
@@ -55,11 +51,7 @@ cd startup-agent
 conda create -n startup-agent python=3.11
 conda activate startup-agent
 
-pip install langgraph langchain langchain-groq langchain-core requests \
-    beautifulsoup4 chromadb sentence-transformers groq python-dotenv \
-    google-search-results aiohttp playwright fastapi uvicorn streamlit \
-    ragas datasets
-
+pip install -r requirements.txt
 playwright install chromium
 ```
 
@@ -96,8 +88,8 @@ Ouvre **http://localhost:8501** dans ton navigateur, entre un nom de startup et 
 **Scraping intelligent**
 aiohttp pour les sites standards (rapide), Playwright en fallback automatique pour les sites qui bloquent les requêtes simples.
 
-**Évaluation RAGAS**
-Mesure objective de la qualité du pipeline sur Histia : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
+**Évaluation RAGAS sur Histia**
+Mesure objective de la qualité du pipeline : faithfulness 0.75, answer relevancy 0.93, context precision 0.65.
 
 **RAG multilingue sourcé**
 Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'origine.
@@ -108,7 +100,7 @@ Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'
 
 - **Self-RAG** — l'agent critique ses propres réponses avant de les retourner
 - **Modèles locaux** via Ollama pour fonctionner sans clé API
-- **Déploiement** sur Railway ou Render
+- **Métriques RAGAS** sur d'autres startups
 
 ---
 
