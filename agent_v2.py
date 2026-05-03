@@ -6,16 +6,18 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from scraper import scrape_startup
 from indexer import indexer_startup
 
 load_dotenv()
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-LLM_MODEL = "llama-3.3-70b-versatile"
+RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+LLM_MODEL_FAST = "llama-3.1-8b-instant"
+LLM_MODEL_SMART = "llama-3.3-70b-versatile"
 
-# --- État partagé entre tous les agents ---
+# --- État partagé ---
 class AgentState(TypedDict):
     nom_startup: str
     urls_trouvees: list[str]
@@ -26,19 +28,37 @@ class AgentState(TypedDict):
     fiabilite_sources: dict
 
 # --- LLM partagé ---
-def get_llm(temperature: float = 0):
+def get_llm(temperature: float = 0, fast: bool = False):
+    model = LLM_MODEL_FAST if fast else LLM_MODEL_SMART
     return ChatGroq(
         api_key=os.getenv("GROQ_API_KEY"),
-        model=LLM_MODEL,
+        model=model,
         temperature=temperature
     )
+
+# ============================================================
+# RE-RANKER
+# ============================================================
+def reranker(question: str, chunks: list[dict], top_k: int = 5) -> list[dict]:
+    """Re-classe les chunks par pertinence réelle."""
+    model = CrossEncoder(RERANKER_MODEL)
+    
+    paires = [(question, chunk["contenu"]) for chunk in chunks]
+    scores = model.predict(paires)
+    
+    chunks_scores = list(zip(chunks, scores))
+    chunks_scores.sort(key=lambda x: x[1], reverse=True)
+    
+    reranked = [c for c, s in chunks_scores[:top_k]]
+    print(f"  [Re-ranker] {len(chunks)} → {len(reranked)} chunks après re-ranking")
+    return reranked
 
 # ============================================================
 # FILTRE DE PERTINENCE
 # ============================================================
 def filtrer_urls_pertinentes(urls: list[str], nom_startup: str) -> list[str]:
     """Filtre les URLs non pertinentes via LLM."""
-    llm = get_llm(temperature=0)
+    llm = get_llm(temperature=0, fast=True)
     urls_pertinentes = []
     
     for url in urls:
@@ -80,10 +100,7 @@ def agent_chercheur(state: AgentState) -> AgentState:
     
     urls = [r["link"] for r in response.json().get("organic", [])]
     urls = [u for u in urls if "linkedin.com" not in u]
-    
-    # Filtre de pertinence via LLM
     urls_pertinentes = filtrer_urls_pertinentes(urls, state["nom_startup"])
-    
     toutes_urls = list(set(state["urls_trouvees"] + urls_pertinentes))
     print(f"[Chercheur] {len(urls_pertinentes)} URLs pertinentes, {len(toutes_urls)} au total")
     
@@ -113,7 +130,7 @@ def agent_analyste(state: AgentState) -> AgentState:
     total = collection.count()
     print(f"[Analyste] {total} chunks dans la base")
 
-    llm = get_llm(temperature=0)
+    llm = get_llm(temperature=0, fast=True)
     model = SentenceTransformer(MODEL_NAME)
 
     questions_test = [
@@ -181,9 +198,19 @@ def agent_redacteur(state: AgentState) -> AgentState:
         score = score_info.get("score", "N/A")
 
         embedding = model.encode(question).tolist()
-        resultats = collection.query(query_embeddings=[embedding], n_results=8)
-        chunks = resultats["documents"][0]
-        urls = [m["url"] for m in resultats["metadatas"][0]]
+        resultats = collection.query(query_embeddings=[embedding], n_results=20)
+        
+        # Re-ranking
+        chunks_raw = []
+        for i in range(len(resultats["documents"][0])):
+            chunks_raw.append({
+                "contenu": resultats["documents"][0][i],
+                "url": resultats["metadatas"][0][i]["url"]
+            })
+        chunks_raw = reranker(question, chunks_raw, top_k=5)
+        chunks = [c["contenu"] for c in chunks_raw]
+        urls = [c["url"] for c in chunks_raw]
+        
         contexte = "\n".join([f"[{urls[i]}]\n{chunks[i]}" for i in range(len(chunks))])
 
         messages = [
@@ -239,7 +266,6 @@ RAPPORT CORRIGÉ :""")
 
     response = llm.invoke(messages)
     rapport_verifie = response.content
-
     print(f"[Vérificateur] ✓ Rapport vérifié et nettoyé")
 
     return {**state, "rapport": rapport_verifie}
