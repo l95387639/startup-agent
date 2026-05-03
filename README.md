@@ -35,7 +35,7 @@ Orchestrateur LangGraph
 | Scraping protégé | `Playwright` (fallback automatique) |
 | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` |
 | Base vectorielle | `ChromaDB` |
-| LLM | `Llama 3.1 8B` via Groq API |
+| LLM | `Llama 3.3 70B` via Groq API |
 | Évaluation | `RAGAS` (faithfulness 0.75, relevancy 0.93, precision 0.65) |
 | API | `FastAPI` |
 | Interface | `Streamlit` |
