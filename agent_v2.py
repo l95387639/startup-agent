@@ -165,7 +165,7 @@ def agent_redacteur(state: AgentState) -> AgentState:
 Tu analyses UNIQUEMENT la startup {state['nom_startup']}.
 Ignore toute information sur d'autres entreprises.
 Réponds directement et factuellement en citant les sources [URL].
-Si une information est absente, dis-le en une phrase."""),
+Si une information est incertaine, donne ce que tu sais et indique brièvement le niveau de certitude."""),
             HumanMessage(content=f"Contexte :\n{contexte}\n\nQuestion : {question}")
         ]
 
@@ -176,6 +176,47 @@ Si une information est absente, dis-le en une phrase."""),
         rapport += f"\n{'─'*62}\n{response.content}\n"
 
     return {**state, "rapport": rapport}
+
+# ============================================================
+# AGENT 5 : VÉRIFICATEUR (Self-RAG)
+# ============================================================
+def agent_verificateur(state: AgentState) -> AgentState:
+    print(f"\n[Vérificateur] Vérification des affirmations...")
+
+    client = chromadb.PersistentClient(path="./chroma_db")
+    collection = client.get_collection("startups")
+    llm = get_llm(temperature=0)
+
+    tous_chunks = collection.get()
+    contexte_global = " ".join(tous_chunks["documents"][:50])
+
+    messages = [
+        SystemMessage(content=f"""Tu es un vérificateur factuel strict.
+Tu reçois un rapport sur {state['nom_startup']} et le contexte source.
+Tu dois :
+1. Identifier chaque affirmation factuelle dans le rapport
+2. Vérifier si elle est présente dans le contexte source
+3. Supprimer ou corriger les affirmations non vérifiables
+4. Retourner le rapport corrigé UNIQUEMENT avec les faits vérifiés
+
+Ne garde que ce qui est explicitement mentionné dans les sources.
+Si une section entière est invérifiable, remplace-la par "Information non trouvée dans les sources disponibles."
+"""),
+        HumanMessage(content=f"""CONTEXTE SOURCE :
+{contexte_global[:3000]}
+
+RAPPORT À VÉRIFIER :
+{state['rapport']}
+
+RAPPORT CORRIGÉ :""")
+    ]
+
+    response = llm.invoke(messages)
+    rapport_verifie = response.content
+
+    print(f"[Vérificateur] ✓ Rapport vérifié et nettoyé")
+
+    return {**state, "rapport": rapport_verifie}
 
 # --- Décision ---
 def decision(state: AgentState) -> str:
@@ -191,6 +232,7 @@ def construire_agent():
     graph.add_node("scraper", agent_scraper)
     graph.add_node("analyste", agent_analyste)
     graph.add_node("redacteur", agent_redacteur)
+    graph.add_node("verificateur", agent_verificateur)
 
     graph.set_entry_point("chercheur")
     graph.add_edge("chercheur", "scraper")
@@ -199,7 +241,8 @@ def construire_agent():
         "chercher": "chercheur",
         "generer": "redacteur"
     })
-    graph.add_edge("redacteur", END)
+    graph.add_edge("redacteur", "verificateur")
+    graph.add_edge("verificateur", END)
 
     return graph.compile()
 
