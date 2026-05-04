@@ -102,11 +102,12 @@ Embeddings multilingues + ChromaDB. Chaque affirmation est liée à sa source d'
 
 ---
 
-## 📈 Pistes d'amélioration
-- **LLM payant**
-- **Re-ranking** - passer de "ok" à "excellent" ✅
-- **LangSmith** - monitoring des appels LLM
-- **FAISS** - plus rapide que ChromaDB à grande échelle
+## 📈 Pistes d’amélioration
+- Amélioration du parsing et de la fiabilité des sources (PDF/HTML + scoring de confiance).
+- Passage à un retrieval hybride (BM25 + embeddings) et test de FAISS pour la scalabilité.
+- Ajout de re-ranking (cross-encoder / Cohere Rerank) pour améliorer la précision du top-k.
+- Optimisation des coûts : réduction des appels LLM + batching + cache des embeddings.
+- Intégration de LangSmith pour le monitoring des appels LLM (latence, coût, debug).
 ---
 
 ## 👤 Auteur
